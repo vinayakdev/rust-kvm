@@ -42,13 +42,25 @@ function isRealIpv4(ip: string): boolean {
   return true;
 }
 
-async function resolveHostname(ip: string): Promise<string | null> {
+async function resolveViaDscacheutil(ip: string): Promise<string | null> {
+  if (process.platform !== "darwin") return null;
   try {
-    const names = await dns.reverse(ip);
-    return names[0] ?? null;
+    const { stdout } = await execFileAsync("dscacheutil", ["-q", "host", "-a", "ip_address", ip]);
+    const match = /^name:\s*(\S+)/m.exec(stdout);
+    return match ? match[1]!.replace(/\.$/, "") : null;
   } catch {
     return null;
   }
+}
+
+async function resolveHostname(ip: string): Promise<string | null> {
+  try {
+    const names = await dns.reverse(ip);
+    if (names[0]) return names[0];
+  } catch {
+    // fall through to mDNS/Bonjour lookup below
+  }
+  return resolveViaDscacheutil(ip);
 }
 
 export async function networkNeighbors(): Promise<NetworkDevice[]> {
