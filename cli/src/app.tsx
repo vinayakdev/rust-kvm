@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import { WelcomeScreen } from "./components/welcome-screen.js";
 import * as identity from "./lib/identity.js";
 import { localMachine, networkNeighbors, type NetworkDevice } from "./lib/network.js";
+import { Discovery } from "./lib/discovery.js";
 
 const LOGO = "  ___\n / _ \\ ()\n| (_) |\n \\___/  ";
 
@@ -32,13 +33,31 @@ export function App() {
   const [status, setStatus] = useState<string | null>(null);
   const [neighbors, setNeighbors] = useState<NetworkDevice[]>([]);
   const [loadingNeighbors, setLoadingNeighbors] = useState(true);
+  const [, forceTick] = useState(0);
+  const discoveryRef = useRef<Discovery | null>(null);
 
   const machine = localMachine();
 
   useEffect(() => {
-    networkNeighbors()
-      .then(setNeighbors)
-      .finally(() => setLoadingNeighbors(false));
+    const discovery = new Discovery();
+    discoveryRef.current = discovery;
+    discovery.start(name, machine.ipv4);
+    return () => discovery.stop();
+  }, [name, machine.ipv4]);
+
+  useEffect(() => {
+    const refresh = () => {
+      networkNeighbors()
+        .then(setNeighbors)
+        .finally(() => setLoadingNeighbors(false));
+    };
+    refresh();
+    const neighborInterval = setInterval(refresh, 5000);
+    const tickInterval = setInterval(() => forceTick((t) => t + 1), 2000);
+    return () => {
+      clearInterval(neighborInterval);
+      clearInterval(tickInterval);
+    };
   }, []);
 
   useInput((input, key) => {
@@ -102,7 +121,12 @@ export function App() {
             <Text dimColor>none seen yet</Text>
           ) : (
             neighbors.map((d) => (
-              <DeviceRow key={d.ip} name={d.hostname ?? "unknown"} ip={d.ip} mac={d.mac ?? "unknown"} />
+              <DeviceRow
+                key={d.ip}
+                name={discoveryRef.current?.nameFor(d.ip) ?? d.hostname ?? "unknown"}
+                ip={d.ip}
+                mac={d.mac ?? "unknown"}
+              />
             ))
           )}
         </WelcomeScreen.Section>
