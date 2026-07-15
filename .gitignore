@@ -2,3 +2,5 @@
 Cargo.lock
 .DS_Store
 .tokensave/
+cli/node_modules/
+cli/dist/
