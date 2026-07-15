@@ -21,17 +21,20 @@ enum Mode {
 struct App {
     name: String,
     ips: Vec<IpAddr>,
+    neighbors: Vec<IpAddr>,
     mode: Mode,
     status: Option<String>,
 }
 
 fn main() -> Result<()> {
     let identity = kvm_identity::load_or_create()?;
-    let ips = kvm_identity::local_ips().unwrap_or_default();
+    let ips = kvm_identity::local_ipv4s().unwrap_or_default();
+    let neighbors = kvm_identity::network_neighbors().unwrap_or_default();
 
     let mut app = App {
         name: identity.name,
         ips,
+        neighbors,
         mode: Mode::View,
         status: None,
     };
@@ -103,7 +106,8 @@ fn draw(frame: &mut ratatui::Frame, app: &App) {
         .constraints([
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Length(3 + app.ips.len() as u16),
+            Constraint::Length(3 + app.ips.len().max(1) as u16),
+            Constraint::Length(3 + app.neighbors.len().max(1) as u16),
             Constraint::Min(1),
         ])
         .split(frame.area());
@@ -128,15 +132,27 @@ fn draw(frame: &mut ratatui::Frame, app: &App) {
     frame.render_widget(name_block, chunks[1]);
 
     let ip_lines: Vec<Line> = if app.ips.is_empty() {
-        vec![Line::from("no network interfaces found")]
+        vec![Line::from("no IPv4 address found")]
     } else {
         app.ips
             .iter()
             .map(|ip| Line::from(format!("{ip}")))
             .collect()
     };
-    let ip_block = Paragraph::new(ip_lines).block(Block::default().borders(Borders::ALL).title("IP addresses"));
+    let ip_block = Paragraph::new(ip_lines).block(Block::default().borders(Borders::ALL).title("IPv4 address"));
     frame.render_widget(ip_block, chunks[2]);
+
+    let neighbor_lines: Vec<Line> = if app.neighbors.is_empty() {
+        vec![Line::from("none seen yet")]
+    } else {
+        app.neighbors
+            .iter()
+            .map(|ip| Line::from(format!("{ip}")))
+            .collect()
+    };
+    let neighbor_block = Paragraph::new(neighbor_lines)
+        .block(Block::default().borders(Borders::ALL).title("other devices on network"));
+    frame.render_widget(neighbor_block, chunks[3]);
 
     let help = match &app.mode {
         Mode::View => "r: rename   q: quit".to_string(),
@@ -147,5 +163,5 @@ fn draw(frame: &mut ratatui::Frame, app: &App) {
         None => help,
     };
     let footer = Paragraph::new(status_line).style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(footer, chunks[3]);
+    frame.render_widget(footer, chunks[4]);
 }

@@ -73,11 +73,45 @@ pub fn rename(new_name: &str) -> Result<Identity> {
     Ok(identity)
 }
 
-pub fn local_ips() -> Result<Vec<IpAddr>> {
+pub fn local_ipv4s() -> Result<Vec<IpAddr>> {
     let ifaces = if_addrs::get_if_addrs().context("listing network interfaces")?;
     Ok(ifaces
         .into_iter()
         .filter(|i| !i.is_loopback())
         .map(|i| i.ip())
+        .filter(|ip| ip.is_ipv4())
         .collect())
+}
+
+/// Other IPv4 hosts seen on the local network, read from the OS ARP/neighbor
+/// cache (`arp -a`). Only shows machines this host has already talked to on
+/// the LAN — not a full active scan.
+pub fn network_neighbors() -> Result<Vec<IpAddr>> {
+    let output = std::process::Command::new("arp")
+        .arg("-a")
+        .output()
+        .context("running arp -a")?;
+    let text = String::from_utf8_lossy(&output.stdout);
+
+    let mut ips: Vec<IpAddr> = text
+        .lines()
+        .filter_map(|line| {
+            let start = line.find('(')?;
+            let end = line[start..].find(')')? + start;
+            line[start + 1..end].parse::<IpAddr>().ok()
+        })
+        .filter(|ip| match ip {
+            IpAddr::V4(v4) => {
+                !v4.is_loopback()
+                    && !v4.is_multicast()
+                    && !v4.is_broadcast()
+                    && !v4.is_link_local()
+            }
+            IpAddr::V6(_) => false,
+        })
+        .collect();
+
+    ips.sort();
+    ips.dedup();
+    Ok(ips)
 }
